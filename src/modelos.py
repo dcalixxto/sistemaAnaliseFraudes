@@ -16,7 +16,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.config import ATRIBUTOS_CATEGORICOS, ATRIBUTOS_NUMERICOS, SEMENTE
 
 
-def criar_preprocessador():
+def criar_preprocessador(numericos=ATRIBUTOS_NUMERICOS, categoricos=ATRIBUTOS_CATEGORICOS):
     """Padronização dos contínuos + one-hot das categóricas (idêntico para os 4).
 
     O ColumnTransformer aplica uma transformação diferente a cada grupo de
@@ -27,11 +27,11 @@ def criar_preprocessador():
         # (nome, transformador, colunas)
         # StandardScaler: z = (x - média) / desvio  ->  média 0 e desvio 1.
         # Essencial para a Regressão Logística; indiferente para árvores.
-        ("num", StandardScaler(), ATRIBUTOS_NUMERICOS),
+        ("num", StandardScaler(), numericos),
         # OneHotEncoder: "travel" vira category_travel=1 e as demais=0.
         #   handle_unknown="ignore": categoria nunca vista gera tudo 0, sem erro.
         #   sparse_output=False: matriz comum (densa); o GaussianNB não aceita esparsa.
-        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), ATRIBUTOS_CATEGORICOS),
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), categoricos),
     ])
 
 

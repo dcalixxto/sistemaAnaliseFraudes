@@ -41,7 +41,7 @@ def carregar_bruto():
             "Baixe o dataset em https://www.kaggle.com/datasets/kartik2112/fraud-detection "
             "e coloque fraudTrain.csv e fraudTest.csv na pasta data/."
         )
-    # usecols = lê só as 13 colunas úteis (economiza memória e tempo).
+    # usecols = lê só as 12 colunas úteis (economiza memória e tempo).
     treino = pd.read_csv(ARQ_TREINO, usecols=COLUNAS_BRUTAS)
     if ARQ_TESTE.exists():
         teste = pd.read_csv(ARQ_TESTE, usecols=COLUNAS_BRUTAS)

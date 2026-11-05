@@ -12,7 +12,8 @@ import json
 import numpy as np
 import pandas as pd
 import plotly.express as px          # gráficos prontos em 1 linha (barras, histogramas, mapas)
-import plotly.graph_objects as go    # gráficos montados peça por peça (curvas, heatmap, medidor)
+import plotly.graph_objects as go    # gráficos montados peça por peça (curvas, heatmap)
+import plotly.io as pio
 import streamlit as st
 from plotly.subplots import make_subplots  # gráfico com dois eixos Y
 from sklearn.metrics import (
@@ -25,7 +26,11 @@ from src.config import (
 )
 
 # Título da aba do navegador, ícone e layout largo. Deve ser o 1º comando st.*.
-st.set_page_config(page_title="Detecção de Fraudes", page_icon="💳", layout="wide")
+st.set_page_config(page_title="Análise de Fraudes", page_icon="💳", layout="wide")
+
+# Todos os gráficos com vírgula decimal e ponto de milhar (padrão brasileiro).
+pio.templates["pt_br"] = go.layout.Template(layout=dict(separators=",."))
+pio.templates.default = "plotly+pt_br"
 
 # Uma cor fixa por modelo em todos os gráficos, para o leitor associar cor e modelo.
 CORES = {
@@ -85,6 +90,11 @@ def milhar(n):
     return f"{n:,}".replace(",", ".")
 
 
+def br(valor, casas=2):
+    """1234.5 -> '1.234,50' (padrão brasileiro)."""
+    return f"{valor:,.{casas}f}".replace(",", "#").replace(".", ",").replace("#", ".")
+
+
 def rotulo_atributo(nome):
     """'category_travel' -> 'Categoria: Viagem'; 'valor_log' -> 'Valor (log)'."""
     if nome.startswith("category_"):
@@ -107,7 +117,7 @@ def pagina_eda():
     with st.sidebar:
         st.subheader("Filtros")
         conjunto = st.radio("Período", ["Todos", "Treino", "Teste"], horizontal=True)
-        cats = st.multiselect("Categorias", sorted(df["categoria"].unique()))
+        cats = st.multiselect("Categorias", sorted(df["categoria"].unique()), placeholder="Todas as categorias")
     # Indexação booleana: mantém só as linhas em que a condição é verdadeira.
     if conjunto != "Todos":
         df = df[df["conjunto"] == conjunto.lower()]
@@ -122,14 +132,14 @@ def pagina_eda():
     c = st.columns(5)
     c[0].metric("Transações", milhar(len(df)))
     c[1].metric("Fraudes", milhar(len(fraudes)))
-    c[2].metric("Taxa de fraude", f"{taxa(df[ALVO]):.2f}%")
+    c[2].metric("Taxa de fraude", f"{br(taxa(df[ALVO]))}%")
     # O 3º argumento (delta) mostra a comparação com as legítimas; delta_color="off" = cinza.
-    c[3].metric("Ticket médio fraude", f"US$ {fraudes['amt'].mean():,.2f}",
-                f"legítima: US$ {df.loc[df[ALVO] == 0, 'amt'].mean():,.2f}", delta_color="off")
-    c[4].metric("Valor fraudado", f"US$ {fraudes['amt'].sum() / 1e6:,.2f} mi")
+    c[3].metric("Ticket médio fraude", f"US$ {br(fraudes['amt'].mean())}",
+                f"legítima: US$ {br(df.loc[df[ALVO] == 0, 'amt'].mean())}", delta_color="off")
+    c[4].metric("Valor fraudado", f"US$ {br(fraudes['amt'].sum() / 1e6)} mi")
 
     st.caption("A taxa de fraude é ínfima: um modelo que responde sempre “legítima” teria "
-               f"{100 - taxa(df[ALVO]):.2f}% de acurácia e não detectaria nada — por isso a acurácia não é usada.")
+               f"{br(100 - taxa(df[ALVO]))}% de acurácia e não detectaria nada — por isso a acurácia não é usada.")
 
     # --- Taxa por hora: groupby agrupa por hora; mean = taxa, sum = nº de fraudes.
     col1, col2 = st.columns(2)
@@ -179,7 +189,7 @@ def pagina_eda():
                        title="Distância entre portador e comerciante")
     col2.plotly_chart(fig, width="stretch")
     dist = df.groupby(ALVO)["distancia_km"].mean()
-    st.caption(f"Distância média — fraude: {dist.get(1, np.nan):.1f} km | legítima: {dist.get(0, np.nan):.1f} km.")
+    st.caption(f"Distância média — fraude: {br(dist.get(1, np.nan), 1)} km | legítima: {br(dist.get(0, np.nan), 1)} km.")
 
     # --- Mapas: calor das fraudes (coordenadas do comerciante) e taxa por estado.
     st.subheader("🗺️ Distribuição geográfica das fraudes")
@@ -268,25 +278,25 @@ def pagina_modelos():
         })
     tabela = pd.DataFrame(linhas).set_index("Modelo")
 
-    st.subheader(f"Métricas no conjunto de teste (limiar = {limiar:.2f})")
+    st.subheader(f"Métricas no conjunto de teste (limiar = {br(limiar)})")
     maiores = ["Recall", "Precisão", "F1", "PR-AUC", "ROC-AUC", "Fraudes detectadas"]  # quanto maior, melhor
     menores = ["Fraudes perdidas (FN)", "Bloqueios indevidos (FP)", "Treino (s)", "Latência (ms/transação)"]
     st.dataframe(
         tabela.style
         .highlight_max(subset=maiores, props=DESTAQUE)
         .highlight_min(subset=menores, props=DESTAQUE)
-        # "|" junta dicionários: formato de número por coluna.
-        .format({c: "{:.3f}" for c in ["Recall", "Precisão", "F1", "PR-AUC", "ROC-AUC"]}
-                | {"Treino (s)": "{:.1f}", "Latência (ms/transação)": "{:.4f}"}
-                | {c: "{:,}" for c in ["Fraudes detectadas", "Fraudes perdidas (FN)", "Bloqueios indevidos (FP)"]}),
+        # "|" junta dicionários: formato de número por coluna, no padrão brasileiro.
+        .format({c: (lambda v: br(v, 3)) for c in ["Recall", "Precisão", "F1", "PR-AUC", "ROC-AUC"]}
+                | {"Treino (s)": lambda v: br(v, 1), "Latência (ms/transação)": lambda v: br(v, 4)}
+                | {c: milhar for c in ["Fraudes detectadas", "Fraudes perdidas (FN)", "Bloqueios indevidos (FP)"]}),
         width="stretch",
     )
     # idxmax devolve o nome da linha (modelo) com o maior valor.
     melhor_rec = tabela["Recall"].idxmax()
     melhor_prauc = tabela["PR-AUC"].idxmax()
-    st.info(f"**Maior recall:** {melhor_rec} ({tabela.loc[melhor_rec, 'Recall']:.1%}).  "
+    st.info(f"**Maior recall:** {melhor_rec} ({br(100 * tabela.loc[melhor_rec, 'Recall'], 1)}%).  "
             f"**Melhor PR-AUC** (desempenho independente do limiar): {melhor_prauc} "
-            f"({tabela.loc[melhor_prauc, 'PR-AUC']:.3f}). "
+            f"({br(tabela.loc[melhor_prauc, 'PR-AUC'], 3)}). "
             "Recall alto com precisão muito baixa significa bloquear muitos clientes legítimos.")
 
     # --- Curva Precision-Recall dos 4 modelos sobrepostos.
@@ -295,7 +305,7 @@ def pagina_modelos():
     for nome in MODELOS:
         p, r, _ = precision_recall_curve(y, pred[nome])  # _ = limiares (não usados)
         r, p = curva_amostrada(r, p)
-        fig.add_scatter(x=r, y=p, name=f"{nome} (AP={average_precision_score(y, pred[nome]):.3f})",
+        fig.add_scatter(x=r, y=p, name=f"{nome} (AP={br(average_precision_score(y, pred[nome]), 3)})",
                         line=dict(color=CORES[nome], width=2, dash=TRACOS[nome]))
     # Um classificador aleatório tem precisão = taxa de fraude em qualquer recall.
     fig.add_hline(y=y.mean(), line_dash="dot", line_color="gray", annotation_text="aleatório")
@@ -308,7 +318,7 @@ def pagina_modelos():
     for nome in MODELOS:
         fpr, tpr, _ = roc_curve(y, pred[nome])  # taxa de falsos e de verdadeiros positivos
         fpr, tpr = curva_amostrada(fpr, tpr)
-        fig.add_scatter(x=fpr, y=tpr, name=f"{nome} (AUC={info['modelos'][nome]['roc_auc']:.3f})",
+        fig.add_scatter(x=fpr, y=tpr, name=f"{nome} (AUC={br(info['modelos'][nome]['roc_auc'], 3)})",
                         line=dict(color=CORES[nome], width=2, dash=TRACOS[nome]))
     fig.add_scatter(x=[0, 1], y=[0, 1], line=dict(dash="dot", color="gray"), showlegend=False)
     fig.update_layout(title="Curva ROC", xaxis_title="Taxa de falsos positivos",
@@ -369,7 +379,9 @@ def pagina_modelos():
                      labels={"x": "Importância relativa", "y": ""})
     fig.update_layout(height=480)
     st.plotly_chart(fig, width="stretch")
-    st.caption("O Naive Bayes Gaussiano não produz uma medida nativa de importância.")
+    st.caption("As medidas não são comparáveis entre modelos: no Random Forest, redução de impureza; no LightGBM, "
+               "número de cortes, que favorece atributos com muitos valores. O Naive Bayes Gaussiano não produz "
+               "uma medida nativa de importância.")
 
     # --- Comparação entre estratégias (se mais de uma foi treinada).
     if len(disponiveis) > 1:
@@ -390,7 +402,7 @@ def pagina_modelos():
 
 # --------------------------------------------------------------------------- main
 def main():
-    st.sidebar.title("💳 Detecção de Fraudes")
+    st.sidebar.title("💳 Análise de Fraudes")
     # Sem artefatos não há o que mostrar: explica o que rodar e interrompe (st.stop).
     if not ARQ_DADOS_EDA.exists() or not estrategias_disponiveis():
         st.error("Artefatos não encontrados. Coloque os CSVs do Kaggle em `data/` e rode "

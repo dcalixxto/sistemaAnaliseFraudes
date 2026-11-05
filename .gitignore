@@ -1,4 +1,7 @@
 data/*.csv
 artifacts/
 __pycache__/
+.pytest_cache/
 .venv/
+.idea/
+.claude/
